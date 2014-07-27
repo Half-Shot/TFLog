@@ -35,7 +35,7 @@ class ThemeManager
          */
         function LoadSettings($filepath)
 	{
-                $this->configuration = Site::$settingsManager->RetriveSettings($filepath);
+                $this->configuration = Site::$settingsManager->RetriveSettings($filepath,true);
 
 		foreach ($this->configuration->themes as $theme)
 		{

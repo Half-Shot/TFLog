@@ -391,7 +391,8 @@
         </ol>
     </xsl:template>
     <xsl:template match="telement[@id='Comment']">
-        <div class="media">
+        <div>
+             <xsl:attribute name="class">media <xsl:value-of select="./variable/class"/></xsl:attribute>
             <xsl:if test="./variable/thumbnail">
                 <a class="pull-left" href = "#">
                     <xsl:if test="./variable/thumbnailurl">

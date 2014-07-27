@@ -1,0 +1,8 @@
+@font-face {
+    font-family: 'TF2BuildTF2Build';
+    src: url('tf2build.eot');
+    src: url('tf2build.eot') format('embedded-opentype'),
+         url('tf2build.woff') format('woff'),
+         url('tf2build.ttf') format('truetype'),
+         url('tf2build.svg#TF2BuildTF2Build') format('svg');
+}

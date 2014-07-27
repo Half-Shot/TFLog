@@ -15,10 +15,10 @@ class BreadIndexSystem extends Module
     {
         $rootSettings = Site::$settingsManager->FindModuleDir("breadindexsystem");
         Site::$settingsManager->CreateSettingsFiles($rootSettings . "index.json", array());
-        $this->navbar = Site::$settingsManager->RetriveSettings($rootSettings . "index.json");
+        $this->navbar = Site::$settingsManager->RetriveSettings($rootSettings . "index.json",true);
         
         Site::$settingsManager->CreateSettingsFiles($rootSettings . "settings.json", new BreadIndexSystemSettings);
-        $this->settings = Site::CastStdObjectToStruct(Site::$settingsManager->RetriveSettings($rootSettings . "settings.json"), "\Bread\Modules\BreadIndexSystemSettings");
+        $this->settings = Site::CastStdObjectToStruct(Site::$settingsManager->RetriveSettings($rootSettings . "settings.json",true), "\Bread\Modules\BreadIndexSystemSettings");
     }
     
     function GetPages()

@@ -310,6 +310,16 @@ class Utilitys {
             }
         }
         
+        static function EmptySubArray($key,$array,$ValueToUse){
+            if(array_key_exists($key, $array)){
+                return $array[$key];
+            }
+            else{
+                return $ValueToUse;
+            }
+            
+        }
+        
         /**
          * Gets a path, splits it up and works it way backwards
          * @param type $path
