@@ -28,7 +28,10 @@
         "user-resource": "user\/resource",
         "user-media": "content\/media",
         "user-posts": "content\/posts",
+<<<<<<< Updated upstream
         "user-content": "content",
+=======
+>>>>>>> Stashed changes
         "user-tflogs": "content\/tflogs",
         "system-temp": "temp"
     }
