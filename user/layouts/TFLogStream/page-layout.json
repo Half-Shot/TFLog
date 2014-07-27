@@ -1,0 +1,15 @@
+{
+"name": "tflogStream",
+"master":["default"],
+"elements": [
+    {
+        "name": "contents",
+	"id": "contents",
+        "human": "Page Contents",
+        "description": "Middle section where contents will be placed.",
+        "event":"TFLog.ShowStream",
+        "module":"TFLog",
+        "tag":"section"
+    }
+]
+}

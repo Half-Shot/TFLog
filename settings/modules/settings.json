@@ -1,8 +1,8 @@
 {
     "modules": [
         {
-            "name": "ExampleModule",
-            "file": "ExampleModule\/module.json"
+            "name": "TFLog",
+            "file": "TFLog\/module.json"
         },
         {
             "name": "BreadPageSystem",

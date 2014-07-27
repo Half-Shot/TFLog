@@ -8,3 +8,4 @@
 # IDE Files
 *.sublime-workspace
 *.sublime-project
+/nbproject/private/

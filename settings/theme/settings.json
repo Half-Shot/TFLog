@@ -10,7 +10,9 @@
         "login": "login\/page-layout.json",
         "register": "register\/page-layout.json",
         "controlpanel": "controlpanel\/page-layout.json",
-        "search": "search\/page-layout.json"
+        "tflogStream": "TFLogStream\/page-layout.json",
+        "tflogSelector": "TFLogSelector\/page-layout.json",
+        "tflogPlayerProfile": "TFLogPlayerProfile\/page-layout.json"
     },
     "settings": {}
 }

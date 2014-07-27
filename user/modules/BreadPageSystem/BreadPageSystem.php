@@ -110,10 +110,13 @@ class BreadPageSystem extends Module
         
         function SetSiteTitle()
         {
-            $Post = $this->GetActivePost();
+            $Post = $this->GetActivePost(false);
             if($this->isnewpost)
             {
                 return "New Post";
+            }
+            if(!$Post){
+                return False;
             }
             return $Post->title;
         }
@@ -500,13 +503,13 @@ class BreadPageSystem extends Module
         
         function DrawTitle()
         {
-           $page = $this->GetActivePost();
+           $page = $this->GetActivePost(false);
            if($page == False)
             return False;
            return Site::$moduleManager->FireEvent("Theme.Post.Title",array("<div id='bps-title'>" . $page->title . "</div>","<div id='bps-subtitle'>" . $page->subtitle . "</div>"));
         }
         
-        function GetActivePostPageId()
+        function GetActivePostPageId($fallbackToFirstPost = true)
         {
            $request = Site::getRequest();
            if(array_key_exists("url",$_POST)){
@@ -528,19 +531,21 @@ class BreadPageSystem extends Module
                    return $pageid;
                }
            }
-           //Hacky way to get first post.
-           $posts = get_object_vars($this->settings->postindex);
-           $posts = \Bread\Utilitys::ArraySetKeyByProperty ($posts, "time_released");
-           krsort($posts);
-           foreach($posts as $id => $post)
-               if(!$post->hidden)
-                    return $post->id;
+           if($fallbackToFirstPost){
+            //Hacky way to get first post.
+            $posts = get_object_vars($this->settings->postindex);
+            $posts = \Bread\Utilitys::ArraySetKeyByProperty ($posts, "time_released");
+            krsort($posts);
+            foreach($posts as $id => $post)
+                if(!$post->hidden)
+                     return $post->id;
+           }
         }
         
-        function GetActivePost()
+        function GetActivePost($fallbackToFirstPost = true)
         {
            if(!$this->activePost){
-                $postid = $this->GetActivePostPageId();
+                $postid = $this->GetActivePostPageId($fallbackToFirstPost);
                 if($postid !== false && isset($this->settings->postindex->$postid))
                 {
                      $this->activePost = $this->settings->postindex->$postid;

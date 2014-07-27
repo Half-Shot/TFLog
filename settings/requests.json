@@ -38,5 +38,20 @@
         "include":["master"],
         "layout":"search",
         "modules":["BreadPageSystem\/module.json"]
+    },
+    "tflogStream":{
+        "include":["master"],
+        "layout":"tflogStream",
+        "modules":["TFLog\/module.json"]
+    },
+    "tflogSelector":{
+        "include":["master"],
+        "layout":"tflogSelector",
+        "modules":["TFLog\/module.json"]
+    },
+    "tflogPlayerProfile":{
+        "include":["master"],
+        "layout":"tflogPlayerProfile",
+        "modules":["TFLog\/module.json"]
     }
 }

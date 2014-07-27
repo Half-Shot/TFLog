@@ -2,17 +2,17 @@
     {
         "request": "homepage",
         "title": true,
-        "text": "Bread Test Site",
+        "text": "Team Log 2",
         "hidden": false,
         "targetWindow": "_self"
     },
     {
         "request": "post",
-        "text": "Posts",
+        "text": "Blog",
         "args": {
             "name": "Hullo"
         },
-        "hidden": false,
+        "hidden": true,
         "targetWindow": "_self"
     },
     {
@@ -23,5 +23,19 @@
         },
         "targetWindow": "_self",
         "permissionrequired": "NewPost"
+    },
+    {
+        "request": "tflogStream",
+        "title": true,
+        "text": "Current Game",
+        "hidden": false,
+        "targetWindow": "_self"
+    },
+    {
+        "request": "tflogSelector",
+        "title": true,
+        "text": "Previous Games",
+        "hidden": false,
+        "targetWindow": "_self"
     }
 ]

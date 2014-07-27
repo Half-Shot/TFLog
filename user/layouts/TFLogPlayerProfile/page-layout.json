@@ -1,0 +1,13 @@
+{
+"name": "tflogPlayerProfile",
+"master":["default"],
+"elements": [
+    {
+        "name": "contents",
+	"id": "contents",
+        "human": "Page Contents",
+        "description": "Middle section where contents will be placed.",
+        "tag":"section"
+    }
+]
+}

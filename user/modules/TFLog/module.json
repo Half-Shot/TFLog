@@ -1,0 +1,16 @@
+{
+    "name":"TFLog",
+    "permissions":["read:user/resource"],
+    "entryclass":"TFLog",
+    "entryfile":"TFLog/Module.php",
+    "events":{
+       	"TFLog.ShowStream":{
+            "function":"ShowStream",
+            "security":0
+       	},
+        "Bread.PageTitle":{
+            "function":"SetSiteTitle",
+            "security":0
+        }
+    }
+}
