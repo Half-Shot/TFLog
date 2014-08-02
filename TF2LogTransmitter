@@ -1,0 +1,341 @@
+#!/bin/env python3
+#Python daemon to read TF2 Logs and write them to a websocket.
+import queue
+import threading
+import time
+import os
+import glob
+import sys
+import re
+import datetime
+import json
+import argparse
+from TF2LogObjects import *
+from ws4py.async_websocket import EchoWebSocket
+
+class TF2Logger(object):
+    FILE_WAITTIME = 1
+    SINGLEFILE_TIMEOUT = 15
+    WEBSOCKET_PORT = 1521
+    logFileIsCurrent = True
+    SingleFileModeOut = True
+    SingleFileModeIn = True
+    OutputPath = False
+    shouldRun = True
+    RegexList ={"timestamp":                    '(?<=L )(.*?)(?=: )',
+                "cvar_name":                    '(?<=: server_cvar: ")(.*?)(?=")',
+                "cvar_value":                   '(?<=" ")(.*?)(?=")',
+                "triggered_playername":         '(?<=")(.*?)(?=<)',
+                "triggered_playertags":         '(?<=\<)(.*?)(?=>)',
+                "triggered_againstplayername":  '(?<=against ")(.*?)(?=<)', #Againstplayertags can be found by checking for 4,5,6 in groups
+                "triggered_victimplayername":   '(?<=\>" killed ")(.*?)(?=\<)',
+                "triggered_type":               '(?<= triggered ")(.*?)(?=")',
+                "world_triggered":              '(?<=World triggered ")(.*?)(?=")',
+                "position":                     '(?<=\(position ")(.*?)(?=")',
+                "attacker_position":            '(?<=\(position ")(.*?)(?=")',
+                "assister_position":            '(?<=\(position ")(.*?)(?=")',
+                "victim_position":              '(?<=\(position ")(.*?)(?=")',
+                "object_type":                  '(?<=\(object ")(.*?)(?=")',
+                "round_number":                 '(?<=\(round "round_)(.*?)(?=")',
+                "killer_weapon":                '(?<= with ")(.*?)(?=")',
+                "healing":                      '(?<=" \(healing ")(.*?)(?="\))',
+                "ubercharge":                    '(?<=\) \(ubercharge ")(.*?)(?="\))',
+                "majorEventType":               '(?<=" )(.*?)(?= ")', # E.g. killed or triggered
+                "buildingWeapon":               '(?<=\) \(weapon ")(.*?)(?="\))', #Weapon used to kill a building
+                "roleChange":                   '(?<=" changed role to ")(.*?)(?=")',
+                "capturePointNumber":           '(?<=\(cp ")(.*?)(?="\))',
+                "numberOfCapturers":            '(?<=\(numcappers ")(.*?)(?="\))',
+                "winningTeam":                  '(?<=\(winner ")(.*?)(?="\))',
+                "roundTime":                    '(?<=\(seconds ")(.*?)(?="\))',
+                "RedScore":                     '(?<=Team "Red" current score ")(.*?)(?=")',
+                "BluScore":                     '(?<=Team "Blue" current score ")(.*?)(?=")',
+                "TeamScorePlayers":             '(?<= with ")(.*?)(?=" players)',
+                "PlayerChatMessage":            '(?<=" say ")(.*?)(?=")',
+                "PlayerChatMessageTeam":        '(?<=" say_team ")(.*?)(?=")',
+                "ReasonForEvent":               '(?<=" reason ")(.*?)(?=")',
+                "CapturePlayerNames":           '(?<= \(player[0-9] ")(.*?)(?=<)',
+                }
+    TriggerList = { "builtobject": TF2EventType.BuiltObject,
+                    "Round_Start": TF2EventType.RoundStart,
+                    "Round_Setup_Begin": TF2EventType.SetupBegins,
+                    "Round_Setup_End": TF2EventType.SetupEnds,
+                    "Round_Overtime": TF2EventType.Overtime,
+                    "player_extinguished": TF2EventType.PlayerExtingished,
+                    "chargedeployed": TF2EventType.UberchargeDeployed,
+                    "kill assist": TF2EventType.KillAssist,
+                    "medic_death": TF2EventType.MedicDeath,
+                    "killedobject": TF2EventType.KilledObject,
+                    "pointcaptured": TF2EventType.PointCaptured,
+                    "domination": TF2EventType.Dominiation,
+                    "Mini_Round_Win": TF2EventType.MiniRoundWin,
+                    "Mini_Round_Length": TF2EventType.MiniRoundTime,
+                    "Mini_Round_Selected": TF2EventType.MiniRoundSelected,
+                    "Mini_Round_Start": TF2EventType.MiniRoundStart,
+                    "Round_Win": TF2EventType.RoundWin,
+                    "captureblocked": TF2EventType.CaptureBlocked,
+                    "revenge": TF2EventType.Revenge,
+                    "Game_Over" : TF2EventType.GameOver,
+                    "milk_attack": TF2EventType.MilkAttack,
+                    "jarate_attack": TF2EventType.JarateAttack
+                  }
+    TeamList = {
+        "Red" : TF2Team.Red,
+        "Blue": TF2Team.Blu,
+        "Unassigned": TF2Team.Unassigned,
+        "Spectator": TF2Team.Spectator,
+        "": TF2Team.NotJoined
+    }
+                
+                
+        
+    def AddPlayer(self,NPlayers,eventObj):
+        while NPlayers > len(eventObj.Players):
+            eventObj.Players.append(TF2Player())
+                
+    def RegexReader(self,string):
+        eventObj = TF2Event()
+        for RegName, RegPattern in self.RegexList.items():
+            regex = re.findall(RegPattern,string)
+            if len(regex) > 0:
+                value = regex[0]
+                #try:
+                if RegName == "timestamp":
+                    try:
+                        eventObj.Timestamp = value
+                    except:
+                        print("Error processing timestamp",value)
+                elif RegName == "cvar_name":
+                    eventObj.EventType = TF2EventType.ServerChangedValue
+                    eventObj.Values["cvar"] = value
+                    regex = re.search(self.RegexList["cvar_value"],string)
+                    eventObj.Values["value"] = regex.groups(0)
+                elif RegName == "triggered_type":
+                    eventObj.EventType = self.TriggerList[value]
+                elif RegName == "triggered_playername":
+                    self.AddPlayer(1,eventObj)
+                    eventObj.Players[0].Name = value
+                elif RegName == "triggered_againstplayername":
+                    self.AddPlayer(2,eventObj)
+                    eventObj.Players[1].Name = value
+                elif RegName == "triggered_victimplayername":
+                    eventObj.EventType = TF2EventType.KilledPlayer
+                    self.AddPlayer(2,eventObj)
+                    eventObj.Players[1].Name = value
+                elif RegName == "triggered_playertags":
+                    NPlayers = round((len(regex) / 3))
+                    self.AddPlayer(NPlayers,eventObj)
+                    i = 0
+                    regi = 0
+                    while(i < NPlayers):
+                        #PlayerN
+                        regi += 1
+                        eventObj.Players[i].SteamID = regex[regi]
+                        regi += 1
+                        eventObj.Players[i].Team = self.TeamList[regex[regi]]
+                        regi += 1
+                        i += 1
+                    
+                elif RegName == "object_type":
+                    eventObj.Values["objType"] = value
+                elif RegName == "assister_position":
+                    eventObj.Values["assister_position"] = value
+                elif RegName == "healing":
+                    eventObj.Values["healing"] = value
+                elif RegName == "ubercharge":
+                    eventObj.Values["ubercharge"] = value   
+                elif RegName == "buildingWeapon":
+                    eventObj.Values["buildingWeapon"] = value   
+                elif RegName == "round_number":
+                    eventObj.Values["roundNumber"] = value   
+                elif RegName == "killer_weapon":
+                    eventObj.Values["killer_weapon"] = value   
+                elif RegName == "majorEventType":
+                    if value == "killed":
+                        eventObj.EventType = TF2EventType.KilledPlayer
+                elif RegName == "roleChange":
+                    eventObj.EventType = TF2EventType.RoleChange
+                    eventObj.Values["role"] = value   
+                elif RegName == "capturePointNumber":
+                    eventObj.Values["capturePointNumber"] = value   
+                elif RegName == "numberOfCapturers":
+                    eventObj.Values["numberOfCapturers"] = value  
+                elif RegName == "winningTeam":
+                    eventObj.Values["winningTeam"] = self.TeamList[value]
+                    eventObj.EventType = TF2EventType.WinningTeam
+                elif RegName == "roundTime":
+                    eventObj.EventType = TF2EventType.RoundTime
+                    eventObj.Values["roundTime"] = value
+                elif RegName == "RedScore":
+                    eventObj.Values["redScore"] = value
+                    eventObj.EventType = TF2EventType.RedScore
+                elif RegName == "BluScore":
+                    eventObj.Values["bluScore"] = value
+                    eventObj.EventType = TF2EventType.RedScore
+                elif RegName == "PlayerChatMessage":
+                    eventObj.Values["message"] = value
+                    eventObj.EventType = TF2EventType.ChatMessage
+                elif RegName == "PlayerChatMessageTeam":
+                    eventObj.Values["message"] = value
+                    eventObj.EventType = TF2EventType.TeamChatMessage
+                elif RegName == "ReasonForEvent":
+                    eventObj.Values["reason"] = value
+                        
+        if eventObj.EventType == TF2EventType.Unknown:  
+            return False      
+        return eventObj
+                
+    def GetLatestLog(self,directory):
+        logfiles = glob.iglob(directory + '/*.log')
+        sortedlogs = max(logfiles, key=os.path.getctime)
+        return sortedlogs
+        
+
+    def start(self):
+        parser = argparse.ArgumentParser(prog="TFLog Processor",description='Process TF2 Logs as they are written and converts to json events.')
+        parser.add_argument('inputFile',help="The path to read from (file or directory).")
+        parser.add_argument('-o',help="The path to output json (file or directory).")
+        parser.add_argument('--w',help="Bind a websocket to send json data out.",action='store_true')
+        args = parser.parse_args()
+
+        if os.path.isdir(args.inputFile):
+            self.SingleFileModeIn = False
+            print("Reading in multiple files")
+        else:
+            print("Reading in single file")
+            
+            
+        self.OutputPath = args.o
+        if self.OutputPath != None:
+            if os.path.isdir(args.o):
+                self.SingleFileModeOut = False
+                print("Writing to multiple files")
+            else:
+                print("Writing to single file")
+            
+        
+        rawQueue = queue.Queue()
+        eventQueue = queue.Queue()
+        
+        readThread   =  threading.Thread(target=self.StatReader ,args = (args.inputFile,rawQueue))
+        readThread.daemon = True
+        decodeThread =  threading.Thread(target=self.StatDecoder,args = (rawQueue,eventQueue))
+        decodeThread.daemon = True
+        writeThread  =  threading.Thread(target=self.StatWriter ,args = (eventQueue,False))
+        writeThread.daemon = True
+        
+        readThread.start()
+        decodeThread.start()
+        writeThread.start()
+
+        try:
+            readThread.join()
+            decodeThread.join()
+            writeThread.join()
+        except (KeyboardInterrupt, SystemExit):
+            print("Closing Threads")
+            self.shouldRun = False #Mostly always on
+            print("All done. Goodbye")
+            sys.exit(0)
+
+    def StatReader(self,path,rawQueue):
+        lastLogFile = ""
+        filepath = "NOLOG"
+        SingleFileTimeout = 0
+        while self.shouldRun:
+            if self.SingleFileModeIn == False:
+                filepath = self.GetLatestLog(path)
+            else:
+                filepath = path
+                    
+            if lastLogFile != filepath:
+                logFile = open(filepath, 'r')
+                lastLogFile = filepath
+                print("Selected log file",filepath)
+                rawQueue.put("NewLogFile") 
+                self.logFileIsCurrent = True  #Set to false at the end of a log file.
+            else:
+                print("There hasn't been any data in a while but this is the newest file.")
+                print("Please restart TFLogs if this is wrong")
+                print("Press Control + C to quit")
+                self.shouldRun = False
+                self.logFileIsCurrent = False
+                
+            while self.logFileIsCurrent:
+                where = logFile.tell()
+                line = logFile.readline()
+                if not line:
+                    logFile.seek(where)
+                    if self.SingleFileModeIn:
+                        SingleFileTimeout += self.FILE_WAITTIME
+                        if SingleFileTimeout >= self.SINGLEFILE_TIMEOUT:
+                            print("File has no more data. Closing up shop")
+                            self.shouldRun = False
+                            self.logFileIsCurrent = False
+                    time.sleep(self.FILE_WAITTIME)
+                else:
+                    SingleFileTimeout = 0
+                    rawQueue.put(line) 
+        logFile.close()
+                
+    def StatDecoder(self,rawQueue,eventQueue):
+        while self.shouldRun:
+            try:
+                currentItem = rawQueue.get(True,10)
+                if currentItem == "NewLogFile":
+                    eventQueue.put("NewLogFile")
+                    
+                eventObj = self.RegexReader(currentItem)
+                if eventObj != False:
+                    eventQueue.put(eventObj)
+            except queue.Empty:
+                self.logFileIsCurrent = False
+    
+        
+    def StatWriter(self,eventQueue,BlankThing):
+        EventArray = []
+        while self.shouldRun:
+            if self.OutputPath != None:
+                if self.SingleFileModeOut:
+                    outFile = open(self.OutputPath,'w')
+                else:
+                    outFile = open(self.OutputPath + "/tflog_" + str(int(time.time())) + ".json", 'w')
+            else:
+                outFile = open("/dev/null", 'w')
+            while True:   
+                try:
+                    currentItem = eventQueue.get(True,10)
+                    if currentItem == "NewLogFile":
+                        if self.SingleFileModeOut:
+                            print("New Output File")
+                            break;
+                        else:
+                            continue;
+                           
+                    jsonObject = self.JsonifyTF2Event(currentItem)
+                    try:
+                        jsonString = json.dumps(jsonObject)
+                        EventArray.append(jsonObject)
+                    except TypeError:
+                        pass#print(EventArray)
+                        
+                    outFile.seek(0)
+                    outFile.write(json.dumps(EventArray))
+                except queue.Empty:
+                    continue;
+                    
+    def JsonifyTF2Event(self,currentItem): #Clean up
+        currentItem = currentItem.__dict__
+        currentItem["EventType"] = currentItem["EventType"].value
+        currentItem["EventType"] = currentItem["EventType"]
+        for i in range(len(currentItem["Players"])):
+            Player = currentItem["Players"][i]
+            currentItem["Players"][i] = Player.__dict__
+            currentItem["Players"][i]["Team"] = currentItem["Players"][i]["Team"].value
+            currentItem["Players"][i]["Team"] = currentItem["Players"][i]["Team"][0]
+        return currentItem
+    
+if __name__ == "__main__":
+    logger = TF2Logger()
+    logger.start()
+    sys.exit(0)
+    

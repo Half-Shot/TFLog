@@ -8,6 +8,10 @@
             "function":"ShowStream",
             "security":0
        	},
+        "TFLog.ShowLogSelector":{
+            "function":"ShowSelector",
+            "security":0
+        },
         "Bread.PageTitle":{
             "function":"SetSiteTitle",
             "security":0

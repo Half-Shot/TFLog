@@ -54,31 +54,17 @@ body
 }
 
 #contents{
-	margin-top:2%;
+    margin-top:2%;
 }
 
 .breadcrumb{
     margin-top:3%;
 }
 
-
-.eventRed{
-    background-color: coral;
-}
-
-.eventBlu{
-    background-color: lightblue;
-}
-
-.teamemblem{
-    width:32px;
-    height:32px;
-}
-
-a {
-    color:black;
-}
-
 .container-fluid{
     font-family: 'TF2BuildTF2Build';
+}
+
+.mapthumb{
+    width:150px;
 }
