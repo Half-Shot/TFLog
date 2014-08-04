@@ -32,7 +32,7 @@ class TF2EventType(Enum):
     MiniRoundTime = 18, #triggered
     RoundWin = 19, #triggered
     WinningTeam = 20,
-    RoundTime = 21, #NotUsed
+    RoundTime = 21,
     RedScore = 22,
     BluScore = 23,
     ChatMessage = 24,
@@ -43,7 +43,9 @@ class TF2EventType(Enum):
     MiniRoundStart = 29,
     GameOver = 30,
     MilkAttack = 31,
-    JarateAttack = 32
+    JarateAttack = 32,
+    ScrambleTeams = 33
+    
     
 class TF2Team(Enum):
     Red = 0,

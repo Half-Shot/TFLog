@@ -68,8 +68,9 @@ class SettingsManager {
      */
     function CreateSettingsFiles($filename,$template)
     {
-        if(file_exists($filename))
+        if(file_exists($filename)){
             return False;
+        }
         file_put_contents($filename, '');
         $this->settings[$filename] = $template;
         chmod($filename, $this::SAVEMODE);
@@ -197,7 +198,7 @@ class SettingsManager {
          Site::$Logger->writeMessage ("Saving " . $path, "SettingsManager");
          $string = $this->CompileJson($object);
          $worked = \file_put_contents($path, $string);
-         if($worked == False || $string == "{}" || is_null($string))    
+         if($worked == False || is_null($string))    
              Site::$Logger->writeError ("Couldn't write json to file. path: '" . $path . "'", \Bread\Logger::SEVERITY_MEDIUM,"core" , $shouldThrow, "Bread\Settings\FileNotWrittenException");                  
     }
 }

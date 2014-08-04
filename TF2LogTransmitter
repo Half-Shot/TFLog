@@ -11,17 +11,12 @@ import datetime
 import json
 import argparse
 from TF2LogObjects import *
-from ws4py.async_websocket import EchoWebSocket
+from tornado import websocket, web, ioloop
+import tornado
+
 
 class TF2Logger(object):
-    FILE_WAITTIME = 1
-    SINGLEFILE_TIMEOUT = 15
-    WEBSOCKET_PORT = 1521
-    logFileIsCurrent = True
-    SingleFileModeOut = True
-    SingleFileModeIn = True
-    OutputPath = False
-    shouldRun = True
+    ClientList = []
     RegexList ={"timestamp":                    '(?<=L )(.*?)(?=: )',
                 "cvar_name":                    '(?<=: server_cvar: ")(.*?)(?=")',
                 "cvar_value":                   '(?<=" ")(.*?)(?=")',
@@ -69,6 +64,7 @@ class TF2Logger(object):
                     "domination": TF2EventType.Dominiation,
                     "Mini_Round_Win": TF2EventType.MiniRoundWin,
                     "Mini_Round_Length": TF2EventType.MiniRoundTime,
+                    "Round_Length": TF2EventType.RoundTime,
                     "Mini_Round_Selected": TF2EventType.MiniRoundSelected,
                     "Mini_Round_Start": TF2EventType.MiniRoundStart,
                     "Round_Win": TF2EventType.RoundWin,
@@ -76,7 +72,8 @@ class TF2Logger(object):
                     "revenge": TF2EventType.Revenge,
                     "Game_Over" : TF2EventType.GameOver,
                     "milk_attack": TF2EventType.MilkAttack,
-                    "jarate_attack": TF2EventType.JarateAttack
+                    "jarate_attack": TF2EventType.JarateAttack,
+                    "ScrambleTeams_Auto": TF2EventType.ScrambleTeams
                   }
     TeamList = {
         "Red" : TF2Team.Red,
@@ -85,9 +82,18 @@ class TF2Logger(object):
         "Spectator": TF2Team.Spectator,
         "": TF2Team.NotJoined
     }
-                
-                
-        
+                        
+    def JsonifyTF2Event(self,currentItem): #Clean up
+        currentItem = currentItem.__dict__
+        currentItem["EventType"] = currentItem["EventType"].value
+        currentItem["EventType"] = currentItem["EventType"][0]
+        for i in range(len(currentItem["Players"])):
+            Player = currentItem["Players"][i]
+            currentItem["Players"][i] = Player.__dict__
+            currentItem["Players"][i]["Team"] = currentItem["Players"][i]["Team"].value
+            currentItem["Players"][i]["Team"] = currentItem["Players"][i]["Team"][0]
+        return currentItem
+    
     def AddPlayer(self,NPlayers,eventObj):
         while NPlayers > len(eventObj.Players):
             eventObj.Players.append(TF2Player())
@@ -191,6 +197,17 @@ class TF2Logger(object):
         
 
     def start(self):
+        
+        # Private variables
+        self.FILE_WAITTIME = 1
+        self.SINGLEFILE_TIMEOUT = 15
+        self.WEBSOCKET_PORT = 1521
+        self.logFileIsCurrent = True
+        self.SingleFileModeOut = True
+        self.SingleFileModeIn = True
+        self.OutputPath = False
+        self.shouldRun = True
+        
         parser = argparse.ArgumentParser(prog="TFLog Processor",description='Process TF2 Logs as they are written and converts to json events.')
         parser.add_argument('inputFile',help="The path to read from (file or directory).")
         parser.add_argument('-o',help="The path to output json (file or directory).")
@@ -222,15 +239,25 @@ class TF2Logger(object):
         decodeThread.daemon = True
         writeThread  =  threading.Thread(target=self.StatWriter ,args = (eventQueue,False))
         writeThread.daemon = True
+        if(args.w):
+            websocketThread = threading.Thread(target=self.StatWebsocket, args = (eventQueue,False))
+            websocketThread.daemon = True
         
         readThread.start()
         decodeThread.start()
         writeThread.start()
+        
+        if(args.w):
+            websocketThread.start()
+        
 
         try:
             readThread.join()
             decodeThread.join()
             writeThread.join()
+            if(args.w):
+                websocketThread.join()
+            
         except (KeyboardInterrupt, SystemExit):
             print("Closing Threads")
             self.shouldRun = False #Mostly always on
@@ -279,8 +306,9 @@ class TF2Logger(object):
                 
     def StatDecoder(self,rawQueue,eventQueue):
         while self.shouldRun:
+            FailedAttempts = 0
             try:
-                currentItem = rawQueue.get(True,10)
+                currentItem = rawQueue.get(True,20)
                 if currentItem == "NewLogFile":
                     eventQueue.put("NewLogFile")
                     
@@ -288,9 +316,8 @@ class TF2Logger(object):
                 if eventObj != False:
                     eventQueue.put(eventObj)
             except queue.Empty:
-                self.logFileIsCurrent = False
+                    self.logFileIsCurrent = False
     
-        
     def StatWriter(self,eventQueue,BlankThing):
         EventArray = []
         while self.shouldRun:
@@ -322,18 +349,62 @@ class TF2Logger(object):
                     outFile.write(json.dumps(EventArray))
                 except queue.Empty:
                     continue;
+
+    def startTornado(self):
+        self.websocket.listen(8888)
+        tornado.ioloop.IOLoop.instance().start()
+        
+    def StatWebsocket(self,eventQueue,BlankThing):
+        print("Started websocket")
+        self.websocket = web.Application([
+            (r'/ws', WSHandler),
+        ])
+        
+        threading.Thread(target=self.startTornado).start()
+        while self.shouldRun:
+            try:
+                currentItem = eventQueue.get(True,10)
+                if currentItem == "NewLogFile":
+                    for client in self.ClientList:
+                        client.write_message("NewMatch")
+                    continue
+                jsonObject = self.JsonifyTF2Event(currentItem)
+                
+                try:
+                    jsonString = json.dumps(jsonObject)
+                    for client in self.ClientList:
+                        try:
+                            client.write_message(jsonString)
+                        except Exception:
+                            pass
                     
-    def JsonifyTF2Event(self,currentItem): #Clean up
-        currentItem = currentItem.__dict__
-        currentItem["EventType"] = currentItem["EventType"].value
-        currentItem["EventType"] = currentItem["EventType"]
-        for i in range(len(currentItem["Players"])):
-            Player = currentItem["Players"][i]
-            currentItem["Players"][i] = Player.__dict__
-            currentItem["Players"][i]["Team"] = currentItem["Players"][i]["Team"].value
-            currentItem["Players"][i]["Team"] = currentItem["Players"][i]["Team"][0]
-        return currentItem
-    
+                except TypeError:
+                    pass
+            except queue.Empty:
+                continue;
+        for client in self.ClientList:
+            client.close()
+        tornado.ioloop.IOLoop.instance().stop()
+        print("Ended websocket")
+        
+class WSHandler(websocket.WebSocketHandler):
+    def open(self):
+        if self not in TF2Logger.ClientList:
+            TF2Logger.ClientList.append(self)
+
+    def on_message(self,message):
+        pass
+
+    def on_close(self):
+        if self in TF2Logger.ClientList:
+            TF2Logger.ClientList.append(self)
+            
+    def check_origin(self, origin):
+        return True
+        
+    def tearDown(self):
+        pass
+
 if __name__ == "__main__":
     logger = TF2Logger()
     logger.start()

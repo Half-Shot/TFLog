@@ -15,6 +15,10 @@
         "Bread.PageTitle":{
             "function":"SetSiteTitle",
             "security":0
+        },
+        "TFLog.ProcessEvent":{
+            "function":"ProcessWebEvent",
+            "security":2    
         }
     }
 }

@@ -234,6 +234,15 @@ class BootstrapTheme extends Bread\Modules\Module
                     return '<span class="glyphicon glyphicon-tasks"></span>';
                 case "megaphone":
                     return '<span class="glyphicon glyphicon-bullhorn"></span>';
+                case "left-arrow":
+                    return '<span class="glyphicon glyphicon-chevron-left"></span>';
+                case "right-arrow":
+                    return '<span class="glyphicon glyphicon-chevron-right"></span>';
+                case "fast-forward":
+                    return '<span class="glyphicon glyphicon-fast-forward"></span>';
+                case "fast-backward":
+                    return '<span class="glyphicon glyphicon-fast-backward"></span>';
+                                        
                 default :
                     return '<small>' . $args . '</small>';
             }

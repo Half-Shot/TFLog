@@ -344,14 +344,11 @@ class Site
 	public static function SetupManagers()
 	{
             $path = static::ResolvePath("%system-settings");
-            if(!static::$isAjax)
-                static::$themeManager = new Themes\ThemeManager();
+            static::$themeManager = new Themes\ThemeManager();
             static::$moduleManager = new Modules\ModuleManager();
             static::$settingsManager = new Settings\SettingsManager();
-            if(!static::$isAjax){
-                static::$themeManager->LoadSettings($path . "/theme/settings.json");
-                static::$themeManager->LoadLayouts();
-            }
+            static::$themeManager->LoadSettings($path . "/theme/settings.json");
+            static::$themeManager->LoadLayouts();
             static::$moduleManager->LoadModulesFromConfig();
 	}
 	/**
@@ -505,6 +502,13 @@ class Site
                 site::$Logger->writeMessage("Request is AJAX!");
                 $module = "";
                 $event = "Bread.AjaxRequest";
+                
+                if(isset($_REQUEST["theme"])){
+                    if(!static::$themeManager->SelectTheme($requestData)){
+			static::$Logger->writeError("Couldn't select theme from request.",\Bread\Logger::SEVERITY_CRITICAL,"core",True);
+                    }
+                }
+                
                 if(isset($_REQUEST["ajaxEvent"]))
                 {
                     $event = $_REQUEST["ajaxEvent"];

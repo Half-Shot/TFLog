@@ -9,10 +9,10 @@
     },
     "logger": {
         "path": ".\/temp\/breadlog",
-        "maxlogfiles": 100,
+        "maxlogfiles": 0,
         "minseveritytolog": -1,
         "multifilelog": true,
-        "keepfor": 60
+        "keepfor": 0
     },
     "strings": {
         "sitename": "Team Log 2"

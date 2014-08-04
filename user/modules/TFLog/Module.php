@@ -4,9 +4,11 @@ use Bread\Site as Site;
 use Bread\Utilitys as Util;
 class TFLog extends Module
 {
-    private $HiddenEventTypes = array(0,1,9,28,29);
+    private $HiddenEventTypes = array(0,1,9,18,28,29);
     private $SteamPlayerSummary = "http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=";
     private $settings = false;
+    private $players = false;
+    private $logs = false;
     function __construct($manager,$name)
     {
             parent::__construct($manager,$name);
@@ -17,15 +19,14 @@ class TFLog extends Module
     function ShowStream(){
         $HTML = "";
         $this->GetGameLogs();
+        Site::AddScript(Util::ResolvePath("%user-modules/TFLog/livefeed.js"),true);
         
         $HeaderPanel = array(new \stdClass(),new \stdClass(),new \stdClass());
         $FooterPanel = array(new \stdClass());
         $Panel = array(new \stdClass(),new \stdClass(), new \stdClass());
         
-        $FooterPanel[0]->offset = 3;
-        $FooterPanel[0]->size = 6;
-        
-        $FooterPanel[0]->body = "NExt Back Etc";
+        $FooterPanel[0]->offset = 5;
+        $FooterPanel[0]->size = 2;
         
         $HeaderPanel[0]->offset = 1;
         $HeaderPanel[0]->size = 2;
@@ -36,54 +37,88 @@ class TFLog extends Module
         $TableOfEvents = new \Bread\Structures\BreadTableElement();
         $TableOfEvents->headingRow = new \Bread\Structures\BreadTableRow();
         if(!array_key_exists("GameID",Site::getRequest()->arguments)){
-            $Game = current($this->GameLogs);
+            $GameLog = current((array)$this->logs);
+            $GameID = array_keys((array)$this->logs, $GameLog)[0];
         }
         else{
             $GameID = Site::getRequest()->arguments["GameID"];
-            if(array_key_exists($GameID, $this->GameLogs)){
-                $Game = $this->GameLogs[$GameID];
+            if(isset($this->logs->$GameID)){
+                $GameLog = $this->logs->$GameID;
             }
             else{
                 return "No such game.";
             }
         }
+        $Events = array_reverse(json_decode(file_get_contents($GameLog->logfilepath)));
         $NItems = Util::EmptySubArray("items",Site::getRequest()->arguments, 50);
         $StartItem = Util::EmptySubArray("start",Site::getRequest()->arguments, 0);
+        
+        $RequestArray = Site::getRequest()->arguments;
+        if(!array_key_exists("start", $RequestArray)){
+            $RequestArray["start"] = 0;
+            $start = 0;
+        }
+        else{
+            $start = $RequestArray["start"];
+        }
+        $RequestArray["GameID"] = $GameID;
+        unset($RequestArray["BASEURL"]);
+        
+        $RequestArray["start"] = 0;
+        $FooterPanel[0]->body =    "<a href='" . Util::CondenseURLParams(false, $RequestArray) . "' class='icon-navigate'>" . $this->manager->FireEvent("Theme.Icon","fast-backward") . "</a>";
+        $RequestArray["start"] = $start;
+        if(intval($RequestArray["start"]) - $NItems >= 0){
+            $RequestArray["start"] = intval($RequestArray["start"]) - $NItems; 
+            $FooterPanel[0]->body .= "<a class='icon-navigate' href='" . Util::CondenseURLParams(false, $RequestArray) . "'>" . $this->manager->FireEvent("Theme.Icon","left-arrow") . "</a>";
+        }
+        
+        if(intval($start) + $NItems < count($Events)){
+            $RequestArray["start"] = intval($start) + $NItems; 
+            $FooterPanel[0]->body .= "<a class='icon-navigate' href='" . Util::CondenseURLParams(false, $RequestArray) . "'>" . $this->manager->FireEvent("Theme.Icon","right-arrow") . "</a>";
+        }
+        $RequestArray["start"] = count($Events) - $NItems;
+        $FooterPanel[0]->body .= "<a class='icon-navigate' href='" . Util::CondenseURLParams(false, $RequestArray) . "'>" . $this->manager->FireEvent("Theme.Icon","fast-forward") . "</a>";
+        
+        $StartItem = Util::EmptySubArray("start",Site::getRequest()->arguments, 0);
+        
         $TableOfEvents->headingRow->FillOutRow(array(""));
         $Items = 1;
-        foreach($GameLog as $i => $Event){
-            if(in_array($Event->EventType, $this->HiddenEventTypes)){
-                unset($GameLog[$i]);
-                continue;
-            }            
-            if($Items < $StartItem)
-                continue;
-            if($Items > $NItems)
+        foreach($Events as $i => $Event){    
+            if($Items >= $NItems){
                 break;
-            foreach($Event->Players as $Player){
-                if($this->SteamIDValid($Player->SteamID)){
-                    $SteamID = $this->Steam_Convert32to64($Player->SteamID);
-                    $this->PlayersInfomation[$SteamID] = false;
-                }
             }
-            $Items += 1;
-        }
-        $SteamRequest = $this->Steam_GetPlayerSummaries(array_keys($this->PlayersInfomation));
-        foreach($SteamRequest as $player){
-            $this->PlayersInfomation[$player->steamid] = $player;
-        }
-        $StatsArray = $this->CalculateTotalStats($GameLog);
-        
-        $HeaderPanel[0]->body = '<div class="redscore scorepanel">' . $this->manager->FireEvent("Theme.Panel",array("body"=>$StatsArray["RedScore"])) . '</div>';
-        $HeaderPanel[1]->body = '<div class="generalscore scorepanel">' . $this->manager->FireEvent("Theme.Panel",array("body"=>"")) . '</div>';
-        $HeaderPanel[2]->body = '<div class="bluscore scorepanel">' . $this->manager->FireEvent("Theme.Panel",array("body"=>$StatsArray["BluScore"])) . '</div>';
-        
-        $GameLog = array_reverse($GameLog);
-        foreach($GameLog as $i => $Event){
-            if($i < $StartItem)
+            if($i < $StartItem){
                 continue;
-            if($i > $NItems)
+            }
+            else{
+                $Items += 1;
+            }
+            
+            if(in_array($Event->EventType, $this->HiddenEventTypes)){
+                unset($Events[$i]);
+                $Items -= 1;
+            }     
+        }
+        //foreach($this->SteamPlayerCache as $player){
+        //    $this->players[$player->steamid] = $player;
+        //}
+        $HeaderPanel[0]->body = '<div class="redscore scorepanel">' . $this->manager->FireEvent("Theme.Panel",array("body"=>$GameLog->stats["RedScore"])) . '</div>';
+        $HeaderPanel[1]->body = '<div class="livepanel scorepanel">' . $this->manager->FireEvent("Theme.Panel",array("body"=>"<div class='islive'>Not Live</div>")) . '</div>';
+        $HeaderPanel[2]->body = '<div class="bluscore scorepanel">' . $this->manager->FireEvent("Theme.Panel",array("body"=>$GameLog->stats["BluScore"])) . '</div>';
+        $Items = 0;
+        $i = -1;
+        foreach($Events as $Event){
+            $i++;
+            if($Items >= $NItems){
                 break;
+            }
+            if($i < $StartItem){
+                continue;
+            }
+            else{
+                $Items++;
+            }
+            
             $EventHTML = $this->BuildEvent($Event);
             if(!empty($EventHTML)){
                 $Row = new \Bread\Structures\BreadTableRow();
@@ -96,8 +131,16 @@ class TFLog extends Module
         $Panel[0]->size = 2;
         $Panel[2]->size = 2;
         
-        $Panel[0]->body = "";
-        $Panel[2]->body = "";
+        //Red Team
+        $RedTeamlist = new \Bread\Structures\BreadTableElement();
+        $RedTeamlist->headingRow = new \Bread\Structures\BreadTableRow();$RedTeamlist->headingRow->FillOutRow(array("Name","Points","Class","Kills","Deaths"));
+        
+        //Blu Team
+        $BluTeamList = new \Bread\Structures\BreadTableElement();
+        $BluTeamList->headingRow = new \Bread\Structures\BreadTableRow();$BluTeamList->headingRow->FillOutRow(array("Name","Points","Class","Kills","Deaths"));
+        
+        $Panel[0]->body = $this->manager->FireEvent("Theme.Table",$RedTeamlist);
+        $Panel[2]->body = $this->manager->FireEvent("Theme.Table",$BluTeamList);
         
         $Panel[1]->size = 8;
         $Panel[1]->body = $this->manager->FireEvent("Theme.Table",$TableOfEvents);
@@ -114,33 +157,50 @@ class TFLog extends Module
         return true;
     }
 
+    function ProcessWebEvent(){
+        $rootSettings = Site::$settingsManager->FindModuleDir("TfLog");
+        Site::$settingsManager->CreateSettingsFiles($rootSettings . "settings.json", new TFLogSettingsFile());
+        $this->settings = Site::$settingsManager->RetriveSettings($rootSettings . "settings.json");
+        $event = json_decode($_REQUEST["tfevent"]);
+        $HTML = $this->BuildEvent($event);
+        return $HTML;
+    }
+    
     private function BuildEvent($Event){
             $CommentHTML = "";
             $CommentStruct = array();
             $AvatarPath = "";
             //Player
-            $Player = $Event->Players[0];
-            $SteamPlayer = False;
-            if($this->SteamIDValid($Player->SteamID)){
-                $SteamID = $this->Steam_Convert32to64($Player->SteamID);
-                $SteamPlayer = $this->PlayersInfomation[$SteamID];
-                $CommentStruct["thumbnailurl"] = "index.php?request=tflogPlayerProfile&SteamID=" . $SteamID; //Needs a author profile link
-                $CommentStruct["thumbnail"] = $SteamPlayer->avatarmedium;
-            }
-            else if($Player->SteamID == "BOT"){
-                $CommentStruct["thumbnail"] = "content/tf2icon.png";
-            }
+            if(count($Event->Players) > 0){
+                $Player = $Event->Players[0];
+                $SteamPlayer = False;
+                if($this->SteamIDValid($Player->SteamID)){
+                    $SteamID = $this->Steam_Convert32to64($Player->SteamID);
+                    if(is_array($this->settings->SteamPlayerCache)){
+                        $SteamPlayer = $this->settings->SteamPlayerCache[$SteamID];
+                    }
+                    else{
+                        $SteamPlayer = $this->settings->SteamPlayerCache->$SteamID;
+                    }
+                    
+                    $CommentStruct["thumbnailurl"] = "index.php?request=tflogPlayerProfile&SteamID=" . $SteamID; //Needs a author profile link
+                    $CommentStruct["thumbnail"] = $SteamPlayer->avatarmedium;
+                }
+                else if($Player->SteamID == "BOT"){
+                    $CommentStruct["thumbnail"] = "content/tf2icon.png";
+                }
 
-            switch($Player->Team){
-                case 0:
-                    $CommentStruct["class"] = "eventRed";
-                    break;
-                case 1:
-                    $CommentStruct["class"] = "eventBlu";
-                    break;
-                default:
-                    $CommentStruct["class"] = "eventDefault";
-                    break;
+                switch($Player->Team){
+                    case 0:
+                        $CommentStruct["class"] = "eventRed";
+                        break;
+                    case 1:
+                        $CommentStruct["class"] = "eventBlu";
+                        break;
+                    default:
+                        $CommentStruct["class"] = "eventDefault";
+                        break;
+                }
             }
            
             //Sub in proper names
@@ -155,6 +215,9 @@ class TFLog extends Module
                        break;
                    case "OBJ_DISPENSER":
                        $Event->Values->objType = "Dispenser";
+                       break;
+                   case "OBJ_ATTACHMENT_SAPPER":
+                       $Event->Values->objType = "Sapper";
                        break;
                 }
             }
@@ -174,6 +237,9 @@ class TFLog extends Module
                     $CommentStruct["header"] = "A Server CVAR was changed.";
                     break;
                 case 2:
+                    if($Event->Values->objType == "OBJ_ATTACHENT_SAPPER"){
+                        $CommentStruct["header"] = sprintf("%s attached a sapper.",$Player->Name);
+                    }
                     $CommentStruct["header"] = sprintf("%s built a %s.",$Player->Name,$Event->Values->objType);
                     break;
                 case 3:
@@ -189,7 +255,12 @@ class TFLog extends Module
                     $CommentStruct["header"] = sprintf("%s extinguised %s.",$Player->Name,$Event->Players[1]->Name);
                     break;
                 case 7:
-                    $CommentStruct["header"] = sprintf("%s depolyed an uberchage on %s.",$Player->Name,$Event->Players[1]->Name);
+                    if(array_key_exists(1,$Event->Players)){
+                        $CommentStruct["header"] = sprintf("%s depolyed an uberchage on %s.",$Player->Name,$Event->Players[1]->Name);
+                    }
+                    else{
+                        $CommentStruct["header"] = sprintf("%s depolyed an uberchage.",$Player->Name);
+                    }
                     break;
                 case 8:
                     $CommentStruct["header"] = sprintf("%s got a kill assist against %s.",$Player->Name,$Event->Players[1]->Name);
@@ -198,11 +269,14 @@ class TFLog extends Module
                     $CommentStruct["header"] = sprintf("%s killed a medic  %s.",$Player->Name,$Event->Players[1]->Name);
                     break;
                 case 10:
-                    $CommentStruct["header"] = sprintf("%s destroyed a %s by  %s.",$Player->Name,$Event->Values->objType,$Event->Players[1]->Name);
-                    $CommentStruct["body"] =  sprintf("Used a %s ",$Event->Values->buildingWeapon);
+                    $CommentStruct["header"] = sprintf("%s destroyed a %s.",$Player->Name,$Event->Values->objType);
+                    if(isset($Event->Values->buildingWeapon)){
+                        $CommentStruct["body"] =  sprintf("Used a %s ",$this->GetWeaponName($Event->Values->buildingWeapon));
+                    }
                     break;
                 case 11:
-                    $CommentStruct["header"] = sprintf("%s killed %s with a %s.",$Player->Name,$Event->Players[1]->Name,$Event->Values->killer_weapon);
+                    $CommentStruct["header"] = sprintf("%s killed %s with a %s.",$Player->Name,$Event->Players[1]->Name,$this->GetWeaponName($Event->Values->killer_weapon));
+                    $CommentStruct["body"] = sprintf('<img class="weaponiocn" src="content/weapons/%1$s.png"></img>',$Event->Values->killer_weapon);
                     break;
                 case 12:
                     //Not Used
@@ -214,7 +288,7 @@ class TFLog extends Module
                         $CommentStruct["body"] =  sprintf('<img class="teamemblem" src="content/emblem/emblem_%1$s_red.png"></img>',$Event->Values->role);
                     }
                     else{
-                        $CommentStruct["body"] =  sprintf('<img class="teamemblem" src="content/emblem/ emblem_%1$s_blu.png"></img>',$Event->Values->role);
+                        $CommentStruct["body"] =  sprintf('<img class="teamemblem" src="content/emblem/emblem_%1$s_blu.png"></img>',$Event->Values->role);
                     }
                     break;
                 case 14:
@@ -222,8 +296,13 @@ class TFLog extends Module
                     foreach($Player as $Event->Players){
                         $Names .= $Player->Name . " ";
                     }
-                    $CommentStruct["header"] = sprintf("%s captured point %s.",$Player->Team,$Event->Values->capturePointNumber);
-                    $CommentStruct["body"] =  sprintf("This was captured by %s ." ,$Names);
+                    if($Player->Team == 0){
+                        $CommentStruct["header"] = sprintf("Red captured point %s.",$Event->Values->capturePointNumber);
+                    }
+                    else{
+                        $CommentStruct["header"] = sprintf("Blu captured point %s.",$Event->Values->capturePointNumber);
+                    }
+                    //$CommentStruct["body"] =  sprintf("This was captured by %s ." ,$Names);
                     break;
                 case 15:
                     $CommentStruct["header"] = sprintf("%s is <strong>dominating</strong> %s.",$Player->Name,$Event->Players[1]->Name);
@@ -281,9 +360,15 @@ class TFLog extends Module
                 case 30:
                     $CommentStruct["header"] = "Game Over!";
                     $CommentStruct["body"] = $Event->Values->reason;
-                    
+                case 31:
+                    $CommentStruct["header"] = sprintf("%s threw mad milk on %s",$Player->Name,$Event->Players[1]->Name);
                     break;
-                
+                case 32:
+                    $CommentStruct["header"] = sprintf("%s jarated %s",$Player->Name,$Event->Players[1]->Name);
+                    break;
+                case 33:
+                    $CommentStruct["header"] = "Teams were scrambled";
+                    break;
                 default:
                     $CommentStruct["header"] = $Event->EventType;
                     break;
@@ -292,6 +377,53 @@ class TFLog extends Module
             //$CommentStruct["body"] = "Some infomation about it";
             $CommentHTML = Site::$moduleManager->FireEvent("Theme.Comment",$CommentStruct);
             return $CommentHTML;
+    }
+    
+    function GetWeaponName($WeaponID){
+        switch($WeaponID){
+            case "sniperrifle":
+                return "Sniper Rifle";
+            case "tf_projectile_pipe_remote":
+                return "Sticky Bomb";
+            case "tf_projectile_rocket":
+                return "Rocket Launcher";
+            case "deflect_promode":
+                return "Deflected Pipebomb";
+            case "knife":
+                return "Spy Knife";
+            case "tf_projectile_pipe":
+                return "Pipe Bomb";
+            case "world":
+                return "Environmental Stuff";
+            case "scattergun":
+                return "Scatter Gun";
+            case "flamethrower":
+                return "Flamethrower";
+            case "minigun":
+                return "Minigun";
+            case "deflect_rocket":
+                return "Deflected Rocket";
+            case "obj_sentrygun3":
+                return "Level 3 Sentry Gun";
+            case "obj_sentrygun2":
+                return "Level 2 Sentry Gun";
+            case "obj_sentrygun1":
+                return "Level 1 Sentry Gun";
+            case "obj_sentrygun":
+                return "Level 1 Sentry Gun";
+            case "pistol_scout":
+                return "Pistol";
+            case "shotgun_soldier":
+                return "Shotgun";
+            case "loch_n_load":
+                return "Load n Load";
+            case "shotgun_primary":
+                return "Shotgun";
+            case "shotgun_pyro":
+                return "Shotgun";
+            default:
+                return $WeaponID;
+        }
     }
     
     function Steam_GetPlayerSummaries($SteamIDArray){
@@ -311,13 +443,14 @@ class TFLog extends Module
             foreach($SteamIDArray as $SteamID){
                 $URL .= $SteamID . ",";
             }
-            \Unirest::timeout($this->settings->seconds->SteamTimeout);
+            \Unirest::timeout($this->settings->SteamTimeout);
             $Response = \Unirest::get($URL)->body;
             foreach($Response->response->players as $Player){
                 $jsonObj[] = $Player;
             }
             file_put_contents($filename, json_encode($jsonObj));
         }
+        $this->settings->SteamPlayerCache = Util::ArraySetKeyByProperty($jsonObj, "steamid");
         return $jsonObj;
     }
     
@@ -332,33 +465,12 @@ class TFLog extends Module
         return "Current Stream";
     }
 
-    private function GetGameLogs(){
-        //Get a settings file.
-        $rootSettings = Site::$settingsManager->FindModuleDir("TfLog");
-        Site::$settingsManager->CreateSettingsFiles($rootSettings . "settings.json", new TFLogSettingsFile());
-        $this->settings = Site::$settingsManager->RetriveSettings($rootSettings . "settings.json");
-        if($this->settings == false){
-            return;
-        }
-        $path = Site::ResolvePath("%user-tflogs");
-        foreach(new \recursiveIteratorIterator( new \recursiveDirectoryIterator($path)) as $file)
-        {
-            if(pathinfo($file->getFilename())['extension'] == "json")
-            {
-               $time = substr($file->getFilename(), 6,10);
-               $time = intval($time);
-               $this->UpdateSettingsLogs($time,$file->getPathName());
-            }
-        }
-        
-        $Players = array_keys(get_object_vars($this->settings->players));
-        $this->SteamPlayerCache = Util::ArraySetKeyByProperty($this->Steam_GetPlayerSummaries($Players),"steamid");
-    }
+    
     private function GetMapThumbnail($mapname){
         if($mapname == "")
             return "";
         $Name = explode('_',$mapname)[1];
-        return glob( 'content\maps' . $Name . '.')[0];
+        return glob( 'content\\maps\\' . $Name . '.')[0];
     }
     
     private function GetPlayerAvatars($players){
@@ -374,49 +486,96 @@ class TFLog extends Module
         return $HTML;
     }
     
+    private function GetGameLogs(){
+        //Get a settings file.
+        $rootSettings = Site::$settingsManager->FindModuleDir("TfLog");
+        Site::$settingsManager->CreateSettingsFiles($rootSettings . "settings.json", new TFLogSettingsFile());
+        $this->settings = Site::$settingsManager->RetriveSettings($rootSettings . "settings.json");
+        
+        Site::$settingsManager->CreateSettingsFiles($rootSettings . "players.json", new \stdClass());
+        $this->players = Site::$settingsManager->RetriveSettings($rootSettings . "players.json");
+        
+        Site::$settingsManager->CreateSettingsFiles($rootSettings . "logs.json", new \stdClass());
+        $this->logs = Site::$settingsManager->RetriveSettings($rootSettings . "logs.json");
+
+        foreach($this->logs as $LogFile){
+            if(!file_exists($LogFile->logfilepath)){
+               $this->DeleteLog($LogFile->time);
+            }
+        }
+        
+        $path = Site::ResolvePath("%user-tflogs");
+        foreach(new \recursiveIteratorIterator( new \recursiveDirectoryIterator($path)) as $file)
+        {
+            if(pathinfo($file->getFilename())['extension'] == "json")
+            {
+               $time = substr($file->getFilename(), 6,10);
+               $time = intval($time);
+               $LogFile = $this->GetLogFile($time,$file->getPathName());
+               if(md5_file($LogFile->logfilepath) != $LogFile->MD5){
+                $this->ReadSettingsFile($LogFile);
+               }
+            }
+            
+        }
+        
+        $this->SteamPlayerCache = Util::ArraySetKeyByProperty($this->Steam_GetPlayerSummaries(array_keys((array)$this->players)),"steamid");
+    }
+    
     private function DeleteLog($logtime){
+        foreach($this->logs as $i => $log){
+            if($log->time == $logtime){
+                unset($this->logs->$i);
+            }
+        }
     }
 
-
-    private function UpdateSettingsLogs($time,$Path){
-        foreach($this->settings->LogFiles as $log){
+    private function ReadSettingsFile($LogFile)
+    {
+        $json = json_decode(file_get_contents($LogFile->logfilepath));
+        if($json == null)
+            return false;
+        foreach($json as $Event){
+            //Add New Players
+            foreach($Event->Players as $Player){
+                if($this->SteamIDValid($Player->SteamID)){
+                    $SteamID = intval($this->Steam_Convert32to64($Player->SteamID));
+                    if(array_key_exists($SteamID,$LogFile->players)){
+                        $LogFile->players[] = $SteamID;
+                    }
+                    if(!isset($this->players->$SteamID)){
+                        $this->AddNewPlayer($SteamID);
+                    }
+                }
+            }
+        }
+        $LogFile->stats = $this->CalculateLogStats($json);
+    }
+    
+    private function GetLogFile($time,$Path){
+        foreach($this->logs as $log){
             if($log->time == $time){
-                return;
+                return $log;
             }
         }
 
         $LogFile = new TFLogFile();
         $LogFile->time = $time;
         $LogFile->logfilepath = $Path;
-
-        $FileContents = file_get_contents($Path);
-        $LogFile->json = json_decode($FileContents);
-        $this->settings->LogFiles[] = $LogFile;
-
-        foreach($LogFile->json as $Event){
-            //Add New Players
-            foreach($Event->Players as $Player){
-                if($this->SteamIDValid($Player->SteamID)){
-                    $SteamID = intval($this->Steam_Convert32to64($Player->SteamID));
-                    if(!in_array($SteamID, $LogFile->players)){
-                        $LogFile->players[] = $SteamID;
-                    }
-                    $PlayerObj = $this->AddNewPlayer($SteamID);
-                    $PlayerObj->stats = $this->CalculatePlayerStats($PlayerObj,$LogFile->json);
-                }
-            }
-        }
-        $this->stats = $this->CalculateLogStats($LogFile->json);
+        $LogFile->lastCheck = 0;
+        $LogFile->MD5 = "";
+        $this->logs->$time = $LogFile;
+        return $LogFile;
     }
     
     private function AddNewPlayer($PlayerID){
         if(!isset($this->settings->players->$PlayerID)){
             $Player = new TFLogPlayer();
             $Player->SteamID = $PlayerID;
-            $this->settings->players->$PlayerID = $Player;
+            $this->players->$PlayerID = $Player;
         }
         
-        return $this->settings->players->$PlayerID;
+        return $this->players->$PlayerID;
     }
     
     
@@ -432,10 +591,14 @@ class TFLog extends Module
         //Gather Data
             switch($Event->EventType){
                 case 22:
-                    $Stats["RedScore"] = $Event->Values->redScore;
+                    if(isset($Event->Values->redScore)){
+                        $Stats["RedScore"] = $Event->Values->redScore;
+                    }
                     break;
                 case 23:
-                    $Stats["BluScore"] = $Event->Values->bluScore;
+                    if(isset($Event->Values->bluScore)){
+                        $Stats["BluScore"] = $Event->Values->bluScore;
+                    }
                     break;
             }
         }
@@ -474,9 +637,9 @@ class TFLogSettingsFile{
     public $LogFiles = array();
     public $SteamTimeout = 5;
     public $lastAccessToSteam = array();
-    public $SteamPlayerCache = array();
+    public $SteamPlayerCache;
     function __construct(){
-        $this->players = new \stdClass();
+        $this->SteamPlayerCache = new \stdClass();
     }
 }
 
@@ -484,7 +647,8 @@ class TFLogFile{
     public $logfilepath = "";
     public $date = 0;
     public $map = "";
-    public $json = "";
+    public $json;
+    public $MD5 = "";
     public $players = array();
     function __construct(){
         $this->stats = new \stdClass();
@@ -493,7 +657,6 @@ class TFLogFile{
 
 class TFLogPlayer{
     public $SteamID;
-    public $Name;
     function __construct(){
         $this->stats = new \stdClass();
     }

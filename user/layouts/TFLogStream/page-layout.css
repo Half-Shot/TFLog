@@ -2,11 +2,9 @@
 #contents{
     margin-top:2%;
     position:absolute;
-    width:90%;
+    width:95%;
     height:90%;
     padding-bottom:10%;
-    margin-left:5%;
-    margin-right:5%;
 }
 
 .eventRed{
@@ -49,4 +47,9 @@ a {
 
 .generalscore .panel{
     background-color: whitesmoke;
+}
+
+.icon-navigate{
+    padding-left:7%;
+    padding-right:7%;
 }
